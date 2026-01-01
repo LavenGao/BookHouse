@@ -6,6 +6,6 @@ export default defineConfig({
   plugins: [react()],
   server: {
     port: 5173
-  }
-  // base: "/bookhouse/" // Enable when deploying to GitHub Pages under a repo subpath.
+  },
+  base: "/BookHouse/" // Required for GitHub Pages under https://<user>.github.io/BookHouse/
 });
