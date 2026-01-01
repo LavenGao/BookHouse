@@ -1,0 +1,23 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Dependency directories
+node_modules
+
+# Vite build output
+dist
+.vite
+
+# Editor
+.DS_Store
+.idea
+.vscode
+
+# Env
+.env
+*.local
