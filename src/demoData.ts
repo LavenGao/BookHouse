@@ -3,7 +3,7 @@ import { Book, Comment, Progress, User, Visit } from "./types";
 export const demoUsers: User[] = [
   {
     user_id: "u-ayu",
-    nickname: "阿玉",
+    nickname: "一一",
     avatar: "https://images.unsplash.com/photo-1524504388940-b1c1722653e1?auto=format&fit=crop&w=200&q=60",
     intro: "喜欢在午后阳光里翻书。",
     created_at: Date.now() - 1000 * 60 * 60 * 24 * 14
