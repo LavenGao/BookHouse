@@ -46,6 +46,11 @@ button {
   transition: transform 120ms ease, box-shadow 120ms ease;
 }
 
+.ghost {
+  background: rgba(31, 42, 45, 0.08);
+  color: var(--ink);
+}
+
 button:disabled {
   opacity: 0.6;
   cursor: not-allowed;

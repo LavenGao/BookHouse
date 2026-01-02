@@ -1,5 +1,14 @@
 import { initializeApp, getApps, FirebaseApp } from "firebase/app";
 import {
+  getAuth,
+  type Auth,
+  type User as FirebaseUser,
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  signOut,
+  onAuthStateChanged
+} from "firebase/auth";
+import {
   getFirestore,
   Firestore,
   collection,
@@ -24,6 +33,7 @@ type FirebaseBundle = {
   app: FirebaseApp;
   db: Firestore;
   storage: FirebaseStorage;
+  auth: Auth;
 };
 
 const firebaseConfig = {
@@ -42,8 +52,11 @@ export function initFirebase(): FirebaseBundle | null {
   const app = getApps().length ? getApps()[0] : initializeApp(firebaseConfig);
   const db = getFirestore(app);
   const storage = getStorage(app);
-  return { app, db, storage };
+  const auth = getAuth(app);
+  return { app, db, storage, auth };
 }
+
+export const firebaseBundle = initFirebase();
 
 // Convenience helpers for Firestore interactions.
 export const firestoreApi = {
@@ -64,6 +77,10 @@ export const firestoreApi = {
     const q = query(collection(db, path), where(field, "==", value), orderBy(orderField, "desc"));
     const snapshot = await getDocs(q);
     return snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+  },
+  async listAll(db: Firestore, path: string) {
+    const snapshot = await getDocs(collection(db, path));
+    return snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
   }
 };
 
@@ -73,5 +90,24 @@ export const storageApi = {
     const storageRef = ref(storage, path);
     await uploadBytes(storageRef, file);
     return getDownloadURL(storageRef);
+  }
+};
+
+export const authApi = {
+  onChange(callback: (user: FirebaseUser | null) => void) {
+    if (!firebaseBundle) return () => {};
+    return onAuthStateChanged(firebaseBundle.auth, callback);
+  },
+  async signUp(email: string, password: string) {
+    if (!firebaseBundle) throw new Error("Firebase not initialized");
+    return createUserWithEmailAndPassword(firebaseBundle.auth, email, password);
+  },
+  async signIn(email: string, password: string) {
+    if (!firebaseBundle) throw new Error("Firebase not initialized");
+    return signInWithEmailAndPassword(firebaseBundle.auth, email, password);
+  },
+  async signOut() {
+    if (!firebaseBundle) return;
+    await signOut(firebaseBundle.auth);
   }
 };

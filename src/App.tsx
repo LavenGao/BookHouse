@@ -7,6 +7,8 @@ import {
   generateId,
   isDemoMode,
   latestProgressForBook,
+  loadRemoteState,
+  persistUser,
   persistBook,
   persistComment,
   persistProgress,
@@ -14,6 +16,8 @@ import {
   uploadMedia
 } from "./dataStore";
 import { Book, Comment, Progress, Visit } from "./types";
+import { authApi, firebaseBundle } from "./firebase";
+import type { User as FirebaseAuthUser } from "firebase/auth";
 
 type BookFormState = {
   title: string;
@@ -33,6 +37,11 @@ type CommentFormState = {
   content: string;
 };
 
+type AuthFormState = {
+  email: string;
+  password: string;
+};
+
 const visitMessages = ["我来你的阅读小屋坐坐 ☕", "看到你又继续向前一步啦 ✨", "给你留下一点温柔的风。"];
 
 function App() {
@@ -49,16 +58,57 @@ function App() {
     audioFile: null
   });
   const [commentForm, setCommentForm] = useState<CommentFormState>({ progressId: "", content: "" });
+  const [authForm, setAuthForm] = useState<AuthFormState>({ email: "", password: "" });
+  const [authUser, setAuthUser] = useState<FirebaseAuthUser | null>(null);
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState("");
 
   const demo = isDemoMode();
+  const canWrite = demo || !!authUser;
 
   useEffect(() => {
     if (!notice) return;
     const timer = setTimeout(() => setNotice(""), 2600);
     return () => clearTimeout(timer);
   }, [notice]);
+
+  useEffect(() => {
+    if (!firebaseBundle) return;
+    const unsubscribe = authApi.onChange(async (user) => {
+      setAuthUser(user);
+      if (user) {
+        const nickname = user.email?.split("@")[0] ?? "好友";
+        setCurrentUserId(user.uid);
+        setViewOwnerId(user.uid);
+        setFriendUserId((prev) => (prev === "" ? user.uid : prev));
+        // Fetch remote data
+        const remote = await loadRemoteState();
+        if (remote) {
+          // Ensure current user exists
+          const exists = remote.users.find((u) => u.user_id === user.uid);
+          const mergedUsers = exists
+            ? remote.users
+            : [{ user_id: user.uid, nickname, intro: "写下你的阅读宣言吧。", created_at: Date.now() }, ...remote.users];
+          setState({ ...remote, users: mergedUsers });
+        } else {
+          // Fallback to demo but add current user
+          setState((prev) => {
+            const exists = prev.users.some((u) => u.user_id === user.uid);
+            return exists
+              ? prev
+              : {
+                  ...prev,
+                  users: [
+                    { user_id: user.uid, nickname, intro: "写下你的阅读宣言吧。", created_at: Date.now() },
+                    ...prev.users
+                  ]
+                };
+          });
+        }
+      }
+    });
+    return () => unsubscribe && unsubscribe();
+  }, []);
 
   useEffect(() => {
     // Default view to the signed-in user.
@@ -124,7 +174,52 @@ function App() {
     return events.sort((a, b) => b.at - a.at).slice(0, 4);
   }, [friendUser, state.books, state.progress, state.visits, currentUserId]);
 
+  const handleSignUp = async () => {
+    if (!authForm.email || !authForm.password) {
+      setNotice("请填写邮箱和密码");
+      return;
+    }
+    try {
+      const res = await authApi.signUp(authForm.email, authForm.password);
+      const nickname = authForm.email.split("@")[0];
+      const newUser = {
+        user_id: res.user.uid,
+        nickname,
+        intro: "写下你的阅读宣言吧。",
+        created_at: Date.now()
+      };
+      setState((prev) => ({ ...prev, users: [newUser, ...prev.users] }));
+      await persistUser(newUser);
+      setNotice("注册并登录成功");
+    } catch (err: any) {
+      setNotice(err?.message ?? "注册失败");
+    }
+  };
+
+  const handleSignIn = async () => {
+    if (!authForm.email || !authForm.password) {
+      setNotice("请填写邮箱和密码");
+      return;
+    }
+    try {
+      await authApi.signIn(authForm.email, authForm.password);
+      setNotice("登录成功");
+    } catch (err: any) {
+      setNotice(err?.message ?? "登录失败");
+    }
+  };
+
+  const handleSignOut = async () => {
+    await authApi.signOut();
+    setAuthUser(null);
+    setNotice("已退出登录");
+  };
+
   const handleAddBook = async () => {
+    if (!canWrite) {
+      setNotice("请先登录以写入数据");
+      return;
+    }
     if (!bookForm.title || !bookForm.totalPages) {
       setNotice("请填写书名和总页数");
       return;
@@ -156,6 +251,10 @@ function App() {
   const handleAddProgress = async () => {
     if (!selectedBook) {
       setNotice("请先选择一本书");
+      return;
+    }
+    if (!canWrite) {
+      setNotice("请先登录以写入数据");
       return;
     }
     if (selectedBook.user_id !== currentUserId) {
@@ -192,6 +291,10 @@ function App() {
   };
 
   const handleVisitCabin = async () => {
+    if (!canWrite) {
+      setNotice("请先登录以留下来访");
+      return;
+    }
     if (!friendUser) return;
     setViewOwnerId(friendUser.user_id);
     const visit: Visit = {
@@ -206,6 +309,10 @@ function App() {
   };
 
   const handleAddComment = async () => {
+    if (!canWrite) {
+      setNotice("请先登录以写入数据");
+      return;
+    }
     if (!commentForm.progressId || !commentForm.content) {
       setNotice("请选择动态并填写留言");
       return;
@@ -235,6 +342,58 @@ function App() {
         </div>
         {demo && <div className="demo-pill">Demo 本地数据 · 配置 Firebase 后可持久化</div>}
       </header>
+
+      {!demo && (
+        <section className="card">
+          <div className="row between">
+            <div>
+              <h3>登录 / 注册</h3>
+              <p className="muted tiny">开启后，写入会要求 Firebase 认证，可保护你的数据。</p>
+            </div>
+            {authUser ? (
+              <div className="chip">已登录：{authUser.email}</div>
+            ) : (
+              <div className="chip muted">未登录</div>
+            )}
+          </div>
+          {!authUser && (
+            <div className="form-grid">
+              <div>
+                <label>邮箱</label>
+                <input
+                  type="email"
+                  value={authForm.email}
+                  onChange={(e) => setAuthForm((p) => ({ ...p, email: e.target.value }))}
+                  placeholder="you@example.com"
+                />
+              </div>
+              <div>
+                <label>密码</label>
+                <input
+                  type="password"
+                  value={authForm.password}
+                  onChange={(e) => setAuthForm((p) => ({ ...p, password: e.target.value }))}
+                  placeholder="至少 6 位"
+                />
+              </div>
+              <div className="row gap">
+                <button onClick={handleSignIn}>登录</button>
+                <button onClick={handleSignUp} className="ghost">
+                  注册并登录
+                </button>
+              </div>
+            </div>
+          )}
+          {authUser && (
+            <div className="row between">
+              <div className="muted tiny">已登录，所有写入会使用你的账号 UID：{authUser.uid}</div>
+              <button onClick={handleSignOut} className="ghost">
+                退出登录
+              </button>
+            </div>
+          )}
+        </section>
+      )}
 
       <section className="card">
         <div className="row between">
@@ -351,13 +510,13 @@ function App() {
               />
             </div>
           </div>
-          <div className="row between">
-            <div className="muted tiny">后续可接 OCR 接口自动提取书名</div>
-            <button onClick={handleAddBook} disabled={saving}>
-              加入虚拟书架
-            </button>
+            <div className="row between">
+              <div className="muted tiny">后续可接 OCR 接口自动提取书名</div>
+              <button onClick={handleAddBook} disabled={saving || !canWrite}>
+                加入虚拟书架
+              </button>
+            </div>
           </div>
-        </div>
       </section>
 
       <section className="card">
@@ -444,7 +603,7 @@ function App() {
               </div>
               <div className="row between">
                 <div className="muted tiny">自动计算进度百分比 & 记录时间轴</div>
-                <button onClick={handleAddProgress} disabled={saving}>
+                <button onClick={handleAddProgress} disabled={saving || !canWrite}>
                   提交进度
                 </button>
               </div>
@@ -477,7 +636,9 @@ function App() {
               </div>
               <div className="row between">
                 <div className="muted tiny">支持双方在动态下互相留言</div>
-                <button onClick={handleAddComment}>发送留言</button>
+                <button onClick={handleAddComment} disabled={!canWrite}>
+                  发送留言
+                </button>
               </div>
             </div>
           </div>
