@@ -72,9 +72,9 @@ export const isDemoMode = () => !hasFirebaseConfig;
 const toMillis = (value: unknown) => {
   if (!value) return Date.now();
   // Firestore Timestamp has toMillis, Date has getTime.
-  // @ts-expect-error
-  if (typeof value.toMillis === "function") return value.toMillis();
-  // @ts-expect-error
+  if (typeof value === "object" && value !== null && "toMillis" in value && typeof (value as any).toMillis === "function") {
+    return (value as any).toMillis();
+  }
   if (value instanceof Date) return value.getTime();
   if (typeof value === "number") return value;
   return Date.now();
