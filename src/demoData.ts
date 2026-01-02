@@ -10,7 +10,7 @@ export const demoUsers: User[] = [
   },
   {
     user_id: "u-mu",
-    nickname: "木木",
+    nickname: "目目",
     avatar: "https://images.unsplash.com/photo-1502685104226-ee32379fefbe?auto=format&fit=crop&w=200&q=60",
     intro: "喜欢在深夜写下读书碎片。",
     created_at: Date.now() - 1000 * 60 * 60 * 24 * 12
